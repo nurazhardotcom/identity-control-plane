@@ -1,0 +1,14 @@
+{:paths ["src" "test"]
+ :tasks
+ {:requires ([control-plane.sidecar :as sidecar]
+             [control-plane.daglog :as daglog]
+             [clojure.test :as t])
+  test {:doc "Run the sidecar TTL + HMAC verification test suite."
+        :task (do (require 'control-plane.sidecar-test)
+                  (let [res (t/run-tests 'control-plane.sidecar-test)
+                        bad (+ (:fail res 0) (:error res 0))]
+                    (System/exit (if (zero? bad) 0 1))))}
+  demo {:doc "Run the deterministic sidecar + daglog demo transcript."
+        :task (do (sidecar/demo) (daglog/demo))}
+  daglog {:doc "Daglog recorder. Usage: bb daglog append <file> <actor> <action> [details-edn] | verify <file> | demo"
+          :task (apply daglog/-main *command-line-args*)}}}
