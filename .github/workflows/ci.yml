@@ -13,9 +13,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup Babashka
-        uses: turtlequeue/setup-babashka@v1
-        with:
-          babashka-version: "1.13.223"
+        run: |
+          curl -sLO https://raw.githubusercontent.com/babashka/babashka/master/install
+          chmod +x install
+          sudo ./install --version 1.13.223
+          bb --version
 
       - name: Run tests
         run: bb test
