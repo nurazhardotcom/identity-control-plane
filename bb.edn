@@ -3,9 +3,9 @@
  {:requires ([control-plane.sidecar :as sidecar]
              [control-plane.daglog :as daglog]
              [clojure.test :as t])
-  test {:doc "Run the sidecar TTL + HMAC verification test suite."
-        :task (do (require 'control-plane.sidecar-test)
-                  (let [res (t/run-tests 'control-plane.sidecar-test)
+  test {:doc "Run the sidecar TTL + HMAC and daglog tamper-detection test suites."
+        :task (do (require 'control-plane.sidecar-test 'control-plane.daglog-test)
+                  (let [res (t/run-tests 'control-plane.sidecar-test 'control-plane.daglog-test)
                         bad (+ (:fail res 0) (:error res 0))]
                     (System/exit (if (zero? bad) 0 1))))}
   demo {:doc "Run the deterministic sidecar + daglog demo transcript."

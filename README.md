@@ -2,6 +2,7 @@
 
 > **Status:** Active — maintained. See [AI_DISCLOSURE.md](AI_DISCLOSURE.md).
 
+[![CI](https://github.com/nurazhardotcom/identity-control-plane/actions/workflows/ci.yml/badge.svg)](https://github.com/nurazhardotcom/identity-control-plane/actions/workflows/ci.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
 Zero-npm, Babashka (`bb`) + Clojure control plane for machine

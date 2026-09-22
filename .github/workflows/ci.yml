@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Babashka
+        uses: turtlequeue/setup-babashka@v1
+        with:
+          babashka-version: "1.13.223"
+
+      - name: Run tests
+        run: bb test
+
+      - name: Run demo
+        run: bb demo
+
+      - name: Daglog round-trip (append then verify, exit 0)
+        env:
+          CONTROL_PLANE_HMAC_KEY: ci-only-daglog-key-0123456789
+        run: |
+          bb daglog append ./daglog-ci.edn payments-api vault.read '{:path "transit/sign"}'
+          bb daglog verify ./daglog-ci.edn
+
+      - name: Daglog tamper check (verify must exit 1)
+        env:
+          CONTROL_PLANE_HMAC_KEY: ci-only-daglog-key-0123456789
+        run: |
+          cp ./daglog-ci.edn ./daglog-tampered.edn
+          sed -i 's/vault.read/vault.admin/' ./daglog-tampered.edn
+          if bb daglog verify ./daglog-tampered.edn; then
+            echo "ERROR: tampered log verified clean"
+            exit 1
+          else
+            echo "tamper detected (exit 1)"
+          fi
