@@ -61,7 +61,7 @@ Daglog entry (one EDN line per entry in file mode):
 bb test
 ```
 
-Expected: 8 tests, 46 assertions, 0 failures, 0 errors, exit 0.
+Expected: 12 tests, 64 assertions, 0 failures, 0 errors, exit 0.
 
 ## Cloud IAM & Security Automation linkage
 
