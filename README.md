@@ -1,5 +1,9 @@
 # identity-control-plane — Non-Human Identity & Machine Control Planes
 
+> **Status:** Active — maintained. See [AI_DISCLOSURE.md](AI_DISCLOSURE.md).
+
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
+
 Zero-npm, Babashka (`bb`) + Clojure control plane for machine
 identities: an ephemeral credential sidecar (OIDC-style token exchange
 with a strict 300-second TTL and memory purge on expiry) plus a
@@ -57,3 +61,7 @@ export CONTROL_PLANE_HMAC_KEY='a-secret-of-16-bytes-minimum'
 bb daglog append ./daglog.edn payments-api vault.read '{:path "transit/sign"}'
 bb daglog verify ./daglog.edn                               # exit 0 valid, 1 tampered
 ```
+
+## License
+
+MIT ©2026 Nur Azhar — see [LICENSE](LICENSE). Built with AI assistance under human direction — see [AI_DISCLOSURE.md](AI_DISCLOSURE.md).
