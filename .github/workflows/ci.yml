@@ -54,7 +54,7 @@ jobs:
         run: |
           curl -sLO https://github.com/clj-kondo/clj-kondo/releases/download/v2026.08.04/clj-kondo-2026.08.04-linux-amd64.zip
           curl -sLO https://github.com/clj-kondo/clj-kondo/releases/download/v2026.08.04/clj-kondo-2026.08.04-linux-amd64.zip.sha256
-          sha256sum -c clj-kondo-2026.08.04-linux-amd64.zip.sha256
+          echo "$(cat clj-kondo-2026.08.04-linux-amd64.zip.sha256)  clj-kondo-2026.08.04-linux-amd64.zip" | sha256sum -c -
           mkdir -p kondo-tmp && unzip -q clj-kondo-2026.08.04-linux-amd64.zip -d kondo-tmp
           sudo install -m 0755 kondo-tmp/clj-kondo /usr/local/bin/clj-kondo
           clj-kondo --version
