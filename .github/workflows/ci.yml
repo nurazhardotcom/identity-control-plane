@@ -10,7 +10,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Babashka
         run: |
@@ -44,3 +44,44 @@ jobs:
           else
             echo "tamper detected (exit 1)"
           fi
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install clj-kondo
+        run: |
+          curl -sLO https://github.com/clj-kondo/clj-kondo/releases/download/v2026.08.04/clj-kondo-2026.08.04-linux-amd64.zip
+          curl -sLO https://github.com/clj-kondo/clj-kondo/releases/download/v2026.08.04/clj-kondo-2026.08.04-linux-amd64.zip.sha256
+          sha256sum -c clj-kondo-2026.08.04-linux-amd64.zip.sha256
+          mkdir -p kondo-tmp && unzip -q clj-kondo-2026.08.04-linux-amd64.zip -d kondo-tmp
+          sudo install -m 0755 kondo-tmp/clj-kondo /usr/local/bin/clj-kondo
+          clj-kondo --version
+
+      - name: Lint (errors and warnings fail)
+        run: clj-kondo --lint src test --fail-level warning
+
+  pdpa-secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: install ripgrep + babashka
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ripgrep
+          curl -sLO https://raw.githubusercontent.com/babashka/babashka/master/install
+          chmod +x install && sudo ./install
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: nurazhardotcom/pdpa-sg-clj
+          path: pdpa-sg-clj
+
+      - name: scan repo for Singapore PII / secrets (NRIC, tokens)
+        run: |
+          mv "$GITHUB_WORKSPACE/pdpa-sg-clj" /tmp/pdpa-sg-clj
+          output=$(cd /tmp/pdpa-sg-clj && bb scan "$GITHUB_WORKSPACE")
+          echo "$output"
+          echo "$output" | grep -q "clean? true"

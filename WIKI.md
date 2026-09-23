@@ -11,10 +11,12 @@ expiry) plus a hash-chained, HMAC-signed transaction log (daglog).
     `{:iss :sub :aud :iat :exp :jti}` with `:exp = :iat + 300`; token material
     stored as `char[]` keyed by `:jti` (never interned Strings).
   - `validate-token`: structure → constant-time signature compare →
-    strict TTL (`[iat, exp)`: at `now == exp` already expired) → audience;
-    failures return `{:valid false :reason ...}`, never throw.
+    strict TTL (`[iat, exp)`: at `now == exp` already expired) →
+    mandatory audience (`:expected-aud` required, omission throws);
+    token failures return `{:valid false :reason ...}`, never throw.
   - `purge!` / `purge-expired!` / `reset-store!` zero (`\u0000` fill) and drop
-    materials; validating an expired token purges immediately.
+    materials; validating an expired token purges immediately. Only the
+    store-held copy is wipeable — caller-held token `String`s are immutable.
   - Keys < 16 bytes refused at issue and verify time.
 - `src/control_plane/daglog.clj` — tamper-evident recorder.
   - Each entry seals `{:seq :ts :actor :action :details :prev-hash}` with
@@ -22,8 +24,9 @@ expiry) plus a hash-chained, HMAC-signed transaction log (daglog).
     genesis links to `"GENESIS"`; canonical form is `pr-str` of deep-sorted map.
   - `verify-chain` recomputes sequence, link, hash, HMAC per entry, reporting
     `{:valid false :reason :at}` at the first break.
-  - File mode appends EDN lines; recording keys come from
-    `$CONTROL_PLANE_HMAC_KEY` — the recorder refuses to run without it.
+  - File mode appends EDN lines under an exclusive file lock and
+    verifies in a streaming pass (`verify-log-file`); recording keys come
+    from `$CONTROL_PLANE_HMAC_KEY` — the recorder refuses to run without it.
 - `bb.edn` — `test` (TTL + HMAC suite), `demo` (deterministic transcript),
   `daglog` (append/verify CLI). Demos/tests inject fixed keys and timestamps;
   no wall clock in any verified path.
@@ -54,6 +57,8 @@ Daglog entry (one EDN line per entry in file mode):
    or truncation fails at the exact sequence number.
 4. Recorder refuses to run without `$CONTROL_PLANE_HMAC_KEY` — no default key,
    no unsigned log.
+5. `validate-token` requires `:expected-aud` — the audience is always
+   checked, never silently skipped.
 
 ## 1-line verification
 
@@ -61,7 +66,7 @@ Daglog entry (one EDN line per entry in file mode):
 bb test
 ```
 
-Expected: 12 tests, 64 assertions, 0 failures, 0 errors, exit 0.
+Expected: 16 tests, 75 assertions, 0 failures, 0 errors, exit 0.
 
 ## Cloud IAM & Security Automation linkage
 

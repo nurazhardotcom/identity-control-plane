@@ -1,6 +1,7 @@
 (ns control-plane.sidecar-test
   (:require [cheshire.core :as json]
-            [clojure.test :refer :all]
+            [clojure.string :as str]
+            [clojure.test :refer [deftest is use-fixtures]]
             [control-plane.daglog :as daglog]
             [control-plane.sidecar :as sidecar])
   (:import (java.io File)))
@@ -38,8 +39,10 @@
   (let [{:keys [token]} (sidecar/issue-token {:workload "w" :aud "a"
                                               :key test-key :now now0})]
     (is (true? (:valid (sidecar/validate-token
-                        token test-key {:now (+ now0 299)}))))
-    (let [res (sidecar/validate-token token test-key {:now (+ now0 300)})]
+                        token test-key {:now (+ now0 299)
+                                        :expected-aud "a"}))))
+    (let [res (sidecar/validate-token token test-key {:now (+ now0 300)
+                                                      :expected-aud "a"})]
       (is (false? (:valid res)))
       (is (= :expired (:reason res))))
     (is (= 0 (sidecar/live-count))
@@ -55,17 +58,31 @@
                      token test-key {:now now0 :expected-aud "other"}))))
     (is (= :bad-signature
            (:reason (sidecar/validate-token
-                     (str "X" (subs token 1)) test-key {:now now0}))))
+                     (str "X" (subs token 1)) test-key {:now now0
+                                                                 :expected-aud "a"}))))
     (is (= :bad-signature
            (:reason (sidecar/validate-token
-                     token "wrong-key-0123456789abcdef-wrong" {:now now0}))))
+                     token "wrong-key-0123456789abcdef-wrong" {:now now0
+                                                                        :expected-aud "a"}))))
     (is (= :not-yet-valid
            (:reason (sidecar/validate-token
-                     token test-key {:now (- now0 10)}))))
-    (is (= :malformed (:reason (sidecar/validate-token "junk" test-key))))
-    (is (= :malformed (:reason (sidecar/validate-token nil test-key))))
+                     token test-key {:now (- now0 10)
+                                              :expected-aud "a"}))))
+    (is (= :malformed (:reason (sidecar/validate-token "junk" test-key {:expected-aud "a"}))))
+    (is (= :malformed (:reason (sidecar/validate-token nil test-key {:expected-aud "a"}))))
     (is (thrown? IllegalArgumentException
                  (sidecar/validate-token token "short")))))
+
+(deftest expected-aud-is-required
+  (let [{:keys [token]} (sidecar/issue-token {:workload "w" :aud "a"
+                                              :key test-key :now now0})]
+    (is (thrown? IllegalArgumentException
+                 (sidecar/validate-token token test-key {:now now0})))
+    (is (thrown? IllegalArgumentException
+                 (sidecar/validate-token token test-key {:now now0
+                                                         :expected-aud ""})))
+    (is (true? (:valid (sidecar/validate-token
+                        token test-key {:now now0 :expected-aud "a"}))))))
 
 (deftest purge-expired-sweeps-store
   (sidecar/issue-token {:workload "w1" :aud "a" :key test-key :now now0})

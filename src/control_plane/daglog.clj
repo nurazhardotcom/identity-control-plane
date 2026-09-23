@@ -40,12 +40,12 @@
     (.update d (.getBytes s "UTF-8"))
     (hex (.digest d))))
 
-(defn- bytes? [x]
+(defn- byte-array? [x]
   (instance? (Class/forName "[B") x))
 
 (defn- key-bytes ^bytes [k]
   (cond
-    (bytes? k) k
+    (byte-array? k) k
     (string? k) (.getBytes ^String k "UTF-8")
     :else (throw (IllegalArgumentException.
                   "HMAC key must be bytes or a string"))))
@@ -90,6 +90,28 @@
               :prev-hash prev}]
     (conj (vec log) (seal-entry body k))))
 
+(defn- check-entry
+  "Check one entry against its expected sequence number and prev-hash.
+  Returns nil when clean, or {:valid false :reason :at} at the break."
+  [e want-seq expected-prev k]
+  (let [body (dissoc e :hash :hmac)]
+    (cond
+      (not= want-seq (:seq e))
+      {:valid false :reason :bad-seq :at (:seq e)}
+
+      (not= expected-prev (:prev-hash e))
+      {:valid false :reason :broken-link :at (:seq e)}
+
+      (not (const-eq? (sha256-hex (canonical body))
+                      (str (:hash e))))
+      {:valid false :reason :bad-hash :at (:seq e)}
+
+      (not (const-eq? (hmac-sha256-hex k (str (:hash e)))
+                      (str (:hmac e))))
+      {:valid false :reason :bad-hmac :at (:seq e)}
+
+      :else nil)))
+
 (defn verify-chain
   "Recompute every hash, HMAC, link, and sequence number.
   Returns {:valid true :entries n :tip-hash h} or
@@ -102,26 +124,37 @@
       (if (>= i (count entries))
         {:valid true :entries (count entries)
          :tip-hash (if (seq entries) (:hash (last entries)) genesis-prev)}
-        (let [e (nth entries i)
-              want-seq (inc i)
-              body (dissoc e :hash :hmac)]
+        (if-let [bad (check-entry (nth entries i) (inc i) expected-prev k)]
+          bad
+          (recur (inc i) (:hash (nth entries i))))))))
+
+(defn verify-log-file
+  "Stream-verify an EDN-lines daglog file line by line (constant memory,
+  safe for logs too large to load). Same result shape as verify-chain.
+  Throws on missing files and malformed lines."
+  [path k]
+  (check-key! k)
+  (let [f (File. (str path))]
+    (when-not (.isFile f)
+      (throw (IllegalArgumentException. (str "No such log file: " path))))
+    (with-open [rdr (java.io.BufferedReader. (java.io.FileReader. f))]
+      (loop [expected-prev genesis-prev want-seq 1 tip genesis-prev n 0]
+        (let [line (.readLine rdr)]
           (cond
-            (not= want-seq (:seq e))
-            {:valid false :reason :bad-seq :at (:seq e)}
+            (nil? line)
+            {:valid true :entries n :tip-hash tip}
 
-            (not= expected-prev (:prev-hash e))
-            {:valid false :reason :broken-link :at (:seq e)}
-
-            (not (const-eq? (sha256-hex (canonical body))
-                            (str (:hash e))))
-            {:valid false :reason :bad-hash :at (:seq e)}
-
-            (not (const-eq? (hmac-sha256-hex k (str (:hash e)))
-                            (str (:hmac e))))
-            {:valid false :reason :bad-hmac :at (:seq e)}
+            (str/blank? line)
+            (recur expected-prev want-seq tip n)
 
             :else
-            (recur (inc i) (:hash e))))))))
+            (let [e (edn/read-string line)]
+              (when-not (map? e)
+                (throw (IllegalArgumentException.
+                        (str "Malformed daglog line: " line))))
+              (if-let [bad (check-entry e want-seq expected-prev k)]
+                bad
+                (recur (:hash e) (inc want-seq) (:hash e) (inc n))))))))))
 
 (defn load-log
   "Load an EDN-lines daglog file. Throws on missing files and on any
@@ -140,14 +173,20 @@
 
 (defn append-to-file!
   "Append one sealed entry to an EDN-lines log file (created when
-  absent). Single-writer. Returns the sealed entry."
+  absent) under an exclusive file lock, so concurrent CLI writers
+  serialize instead of interleaving. Returns the sealed entry."
   [path k actor action details & {:keys [ts]}]
-  (let [f (File. (str path))
-        log (if (.exists f) (load-log path) [])
-        entry (last (append-entry log k (or ts (str (Instant/now)))
-                                 actor action details))]
-    (spit f (str (prn-str entry)) :append true)
-    entry))
+  (let [f (File. (str path))]
+    (.createNewFile f)
+    (with-open [raf (java.io.RandomAccessFile. f "rw")
+                chan (.getChannel raf)
+                _lock (.lock chan)]
+      (let [log (load-log path)
+            entry (last (append-entry log k (or ts (str (Instant/now)))
+                                     actor action details))]
+        (.seek raf (.length raf))
+        (.write raf (.getBytes ^String (str (prn-str entry)) "UTF-8"))
+        entry))))
 
 (defn entry->json
   "Render one entry as a JSON object string."
@@ -215,7 +254,7 @@
           (println "Usage: bb daglog verify <file>")
           (System/exit 2))
         (try
-          (let [res (verify-chain (load-log path) (read-env-key))]
+          (let [res (verify-log-file path (read-env-key))]
             (prn res)
             (System/exit (if (:valid res) 0 1)))
           (catch IllegalArgumentException e

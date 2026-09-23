@@ -4,8 +4,8 @@
 
 Active. Public remote: github.com/nurazhardotcom/identity-control-plane
 (origin/main; verified 2026-09-22).
-Test harness: PASSING — `bb test` exits 0 (12 tests, 64 assertions,
-0 failures, 0 errors; verified 2026-09-22).
+Test harness: PASSING — `bb test` exits 0 (16 tests, 75 assertions,
+0 failures, 0 errors; verified 2026-09-23).
 
 ## Layout
 
@@ -18,7 +18,7 @@ identity-control-plane/
 ├── src/control_plane/sidecar.clj       # ephemeral credential sidecar
 ├── src/control_plane/daglog.clj        # hash-chained HMAC-signed log
 ├── test/control_plane/sidecar_test.clj # TTL + HMAC verification suite
-└── test/control_plane/daglog_test.clj  # verify-chain negative suite
+└── test/control_plane/daglog_test.clj  # chain + file verify suite
 ```
 
 ## Verification commands

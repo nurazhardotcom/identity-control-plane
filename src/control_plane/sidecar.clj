@@ -31,12 +31,12 @@
     (.nextBytes (SecureRandom.) b)
     b))
 
-(defn- bytes? [x]
+(defn- byte-array? [x]
   (instance? (Class/forName "[B") x))
 
 (defn- key-bytes ^bytes [k]
   (cond
-    (bytes? k) k
+    (byte-array? k) k
     (string? k) (.getBytes ^String k "UTF-8")
     :else (throw (IllegalArgumentException.
                   "HMAC key must be bytes or a string"))))
@@ -135,11 +135,17 @@
   Reasons for :valid false: :expired :bad-signature :aud-mismatch
   :not-yet-valid :malformed. Expired tokens are purged from memory
   immediately. TTL is strict: the token is valid for [iat, exp) —
-  at now == exp it is already expired."
+  at now == exp it is already expired.
+  :expected-aud is required (non-blank): the audience is always
+  checked, never silently skipped. Omission throws
+  IllegalArgumentException."
   ([token key] (validate-token token key {}))
   ([token key {:keys [now expected-aud]}]
-   (let [kb (try (check-key! key)
-                 (catch IllegalArgumentException e (throw e)))
+   (let [kb (check-key! key)
+         _ (when (or (nil? expected-aud) (not (string? expected-aud))
+                     (str/blank? expected-aud))
+             (throw (IllegalArgumentException.
+                     "validate-token requires :expected-aud")))
          now (long (or now (epoch-now)))]
      (try
        (when-not (string? token)
@@ -168,7 +174,7 @@
                (> (long iat) now)
                {:valid false :reason :not-yet-valid :claims nil}
 
-               (and (some? expected-aud) (not= expected-aud (:aud claims)))
+               (not= expected-aud (:aud claims))
                {:valid false :reason :aud-mismatch :claims nil}
 
                :else
@@ -194,11 +200,13 @@
                                               :jti "demo-jti-0001"})]
     (println (str "issued  jti=" jti " exp=" exp " live=" (live-count)))
     (println (str "token   " token))
-    (let [ok (validate-token token demo-key {:now demo-now})]
+    (let [ok (validate-token token demo-key {:now demo-now
+                                                      :expected-aud "vault:transit"})]
       (println (str "verify@t+0    valid=" (:valid ok)
                     " sub=" (get-in ok [:claims :sub])
                     " live=" (live-count))))
-    (let [expired (validate-token token demo-key {:now (+ demo-now ttl-seconds)})]
+    (let [expired (validate-token token demo-key {:now (+ demo-now ttl-seconds)
+                                                           :expected-aud "vault:transit"})]
       (println (str "verify@t+300  valid=" (:valid expired)
                     " reason=" (:reason expired)
                     " live=" (live-count) " (purged)"))

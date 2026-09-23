@@ -27,11 +27,13 @@ reordering, or truncation is detected at the exact sequence number.
   - `issue-token` mints `base64url(payload).base64url(HMAC-SHA256)` for
     `{:workload :aud}`, `:exp = :iat + 300`, storing the token material
     as a `char[]` keyed by `:jti` (never interned `String`s, which the
-    JVM cannot wipe).
+    JVM cannot wipe). Only the store-held copy is wipeable: token
+    `String`s already handed to callers are immutable by design.
   - `validate-token` checks structure → signature (constant-time
     compare) → strict TTL (`[iat, exp)`: at `now == exp` the token is
-    already expired) → audience; any failure returns
-    `{:valid false :reason ...}`, never throws.
+    already expired) → mandatory audience (`:expected-aud` is
+    required, omission throws); token failures return
+    `{:valid false :reason ...}`, never throw.
   - Immediate purge: validating an expired token zeroes and drops its
     material; `purge-expired!` sweeps the store; keys shorter than 16
     bytes are refused at both issue and verify time.
@@ -41,8 +43,10 @@ reordering, or truncation is detected at the exact sequence number.
     `:hmac = HMAC-SHA-256(hash)`; genesis links to `"GENESIS"`.
   - `verify-chain` recomputes sequence, link, hash, and HMAC per entry
     and reports `{:valid false :reason :at}` at the first break.
-  - File mode appends EDN lines (`load-log`/`append-to-file!`);
-    `entry->json` renders entries as JSON. Recording keys come from
+  - File mode appends EDN lines under an exclusive file lock
+    (`load-log`/`append-to-file!`) and verifies in a streaming pass
+    (`verify-log-file`, constant memory); `entry->json` renders
+    entries as JSON. Recording keys come from
     `$CONTROL_PLANE_HMAC_KEY` — the recorder refuses to run without it.
 - Determinism: demos and tests inject fixed keys/timestamps; no wall
   clock in any verified path.
