@@ -3,8 +3,9 @@
 ## Status
 
 Active. Public remote: `github.com/nurazhardotcom/identity-control-plane`.
-This tree is an uncommitted implementation pass; no commit, push, deploy, or
-remote-system change is part of the work.
+The portable v1 surface below is committed and published on `main`; `v0`
+remains the native, read-compatible path. No deployment or remote-system
+change is part of this repository.
 
 ## Layout
 
