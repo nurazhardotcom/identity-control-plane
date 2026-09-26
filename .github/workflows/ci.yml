@@ -57,9 +57,10 @@ jobs:
 
       - name: Install clojure CLI
         run: |
-          curl -sLO https://download.clojure.org/install/linux-install-1.12.3.1550.sh
-          chmod +x linux-install-1.12.3.1550.sh
-          sudo ./linux-install-1.12.3.1550.sh
+          curl -fsSLO https://download.clojure.org/install/linux-install-1.12.3.1577.sh
+          chmod +x linux-install-1.12.3.1577.sh
+          sudo ./linux-install-1.12.3.1577.sh
+          clojure -Sdescribe
 
       - name: Run portable v1 suite
         run: clojure -M:test
@@ -80,9 +81,10 @@ jobs:
 
       - name: Install clojure CLI
         run: |
-          curl -sLO https://download.clojure.org/install/linux-install-1.12.3.1550.sh
-          chmod +x linux-install-1.12.3.1550.sh
-          sudo ./linux-install-1.12.3.1550.sh
+          curl -fsSLO https://download.clojure.org/install/linux-install-1.12.3.1577.sh
+          chmod +x linux-install-1.12.3.1577.sh
+          sudo ./linux-install-1.12.3.1577.sh
+          clojure -Sdescribe
 
       - name: Run headless Web Crypto suite
         run: clojure -M:cljs-test
