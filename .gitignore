@@ -1,3 +1,8 @@
+# clj-kondo's local cache and the auto-downloaded built-in import cache.
+# No repo-local .clj-kondo/config.edn is added: lint policy is machine-wide.
 .clj-kondo/.cache/
+.clj-kondo/imports/
 .lsp/.cache/
 .cpcache/
+# cljs.main output for the headless Web Crypto suite
+target/

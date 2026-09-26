@@ -1,81 +1,124 @@
-# WIKI — identity-control-plane (Non-Human Identity & Machine Control Planes)
+# WIKI — identity-control-plane
 
-Zero-npm Babashka + Clojure control plane for machine identities: an ephemeral
-credential sidecar (OIDC-style token exchange, strict 300s TTL, memory purge on
-expiry) plus a hash-chained, HMAC-signed transaction log (daglog).
+This repository deliberately has a portable v1 core and a native v0
+compatibility surface. The v1 token is a custom HMAC bearer credential, not
+OIDC and not a JWT. It is valid for the half-open interval
+`[iat_ms, exp_ms)` with an exact 300,000 ms lifetime. Validation is stateless:
+a valid token can be replayed until expiry, and no consume/replay-prevention
+ledger exists.
 
-## Architecture
+## Portable v1 files
 
-- `src/control_plane/sidecar.clj` — ephemeral credential generator.
-  - `issue-token` mints `base64url(payload).base64url(HMAC-SHA256)` claims
-    `{:iss :sub :aud :iat :exp :jti}` with `:exp = :iat + 300`; token material
-    stored as `char[]` keyed by `:jti` (never interned Strings).
-  - `validate-token`: structure → constant-time signature compare →
-    strict TTL (`[iat, exp)`: at `now == exp` already expired) →
-    mandatory audience (`:expected-aud` required, omission throws);
-    token failures return `{:valid false :reason ...}`, never throw.
-  - `purge!` / `purge-expired!` / `reset-store!` zero (`\u0000` fill) and drop
-    materials; validating an expired token purges immediately. Only the
-    store-held copy is wipeable — caller-held token `String`s are immutable.
-  - Keys < 16 bytes refused at issue and verify time.
-- `src/control_plane/daglog.clj` — tamper-evident recorder.
-  - Each entry seals `{:seq :ts :actor :action :details :prev-hash}` with
-    `:hash = SHA-256(canonical-body)` and `:hmac = HMAC-SHA-256(hash)`;
-    genesis links to `"GENESIS"`; canonical form is `pr-str` of deep-sorted map.
-  - `verify-chain` recomputes sequence, link, hash, HMAC per entry, reporting
-    `{:valid false :reason :at}` at the first break.
-  - File mode appends EDN lines under an exclusive file lock and
-    verifies in a streaming pass (`verify-log-file`); recording keys come
-    from `$CONTROL_PLANE_HMAC_KEY` — the recorder refuses to run without it.
-- `bb.edn` — `test` (TTL + HMAC suite), `demo` (deterministic transcript),
-  `daglog` (append/verify CLI). Demos/tests inject fixed keys and timestamps;
-  no wall clock in any verified path.
+- `control-plane.json-v1` — restricted JSON grammar, fixed canonical escaping,
+  strict UTF-8 encode/decode, duplicate-name rejection, and safe integers.
+- `control-plane.encoding-v1` — strict unpadded base64url over unsigned bytes.
+- `control-plane.contract-v1` — versioned token, entry, and trusted-anchor
+  shapes plus export media types.
+- `control-plane.sidecar-core` — pure claim creation, token parsing, and TTL
+  semantics.
+- `control-plane.daglog-core` — pure body preparation, canonical JSONL export,
+  structure checks, and `verify-entry-step-v1`.
+- `control-plane.effect` — clock, crypto, local-store, trusted-anchor, and
+  future archive ports. Archive ports have no implementation in this repo.
 
-## EDN log schemas
+## Adapters
 
-Sidecar claims (inside the signed payload):
+- `control-plane.sidecar-jvm` / `control-plane.daglog-jvm` use JCA and provide
+  synchronous v1 append, verify, anchor, export, and native JSONL file APIs.
+- `control-plane.webcrypto` uses asynchronous Web Crypto only. It is usable
+  from a browser or headless Node without DOM or Reagent. It returns Promises
+  and requires caller-supplied fixed `jti` and timestamps.
+- The JVM v1 file writer uses a JVM file lock. That is a native effect and is
+  not a browser guarantee.
 
-```clojure
-{:iss "identity-control-plane" :sub "payments-api" :aud "vault:transit"
- :iat 1767225600 :exp 1767225900 :jti "demo-jti-0001"}
-```
+## v1 wire examples
 
-Daglog entry (one EDN line per entry in file mode):
+Token claims are signed inside the custom envelope:
 
 ```clojure
-{:seq 3 :ts "2026-09-22T00:00:03Z" :actor "payments-api"
- :action "vault.read" :details {:path "transit/sign"}
- :prev-hash "9f2c…" :hash "a41d…" :hmac "77be…"}
+{"v" 1 "iss" "identity-control-plane" "sub" "payments-api"
+ "aud" "vault:transit" "iat_ms" 1767225600000
+ "exp_ms" 1767225900000 "jti" "fixed-jti-v1"}
 ```
 
-## Fail-closed security gates
+A canonical v1 entry is represented with string names and restricted values:
 
-1. Expired, tampered, malformed, not-yet-valid, or audience-mismatched tokens
-   never validate; expired material is zeroed on the spot.
-2. Short HMAC keys (< 16 bytes) throw at both issue and verify time.
-3. Daglog verification recomputes every link/hash/HMAC; any forgery, reorder,
-   or truncation fails at the exact sequence number.
-4. Recorder refuses to run without `$CONTROL_PLANE_HMAC_KEY` — no default key,
-   no unsigned log.
-5. `validate-token` requires `:expected-aud` — the audience is always
-   checked, never silently skipped.
+```clojure
+{"action" "vault.read"
+ "actor" "payments-api"
+ "details" {"path" "transit/sign"}
+ "prev_hash" "GENESIS"
+ "seq" 1
+ "ts_ms" 1767225600000
+ "v" 1
+ "hash" "22d0146f…"
+ "hmac" "d4f8db43…"}
+```
 
-## 1-line verification
+The body hash is SHA-256 over the canonical JSON body's UTF-8 bytes. The HMAC
+is over `identity-control-plane/daglog/v1\n<hash>`. JSONL export is canonical
+UTF-8 text with one record per LF-terminated line. The anchor is separate and
+contains the full entry count, head/tip hashes, and SHA-256 of the exact JSONL
+bytes.
+
+## What verification proves
+
+1. Token signature, required audience, not-before time, and strict expiry are
+   checked. A successful token is not consumed.
+2. A daglog step checks exact record shape, sequence, previous link, body
+   digest, and HMAC.
+3. A chain over a supplied prefix can be valid. **Only an independently trusted
+   anchor can establish completeness and detect truncation.**
+4. Semantic chain integrity and byte integrity are different: an equivalent
+   non-canonical JSONL representation can pass semantic verification but fail
+   the anchor's exact-byte digest.
+5. Short HMAC keys fail closed. Memory purge is best effort; no reliable JVM or
+   browser memory-wipe claim is made.
+
+## Native v0 compatibility
+
+`control-plane.sidecar` and `control-plane.daglog` retain the original JVM
+public APIs and v0 behavior for existing callers. v0 uses deep-sorted `pr-str`
+and EDN-lines and is supported only in the native/JVM compatibility mode. It
+is not used by the portable core and must not be selected for new shared or
+browser records. Existing v0 file append/verify behavior is migration-only;
+file locking is native-only.
+
+## Export boundary
+
+The v1 APIs can produce a local full-log JSONL bundle, canonical anchor JSON,
+and an export descriptor. They do not upload. An external immutable R2 design
+may later use a private docs Worker, but this repository intentionally has no
+Worker, R2 resource, bucket policy, or credential.
+
+## Gates
 
 ```bash
 bb test
+bb demo
+clojure -M:test
+clojure -M:cljs-test
+clj-kondo --lint src test --fail-level warning
 ```
 
-Expected: 16 tests, 75 assertions, 0 failures, 0 errors, exit 0.
+The portable suites use fixed public known-answer keys and timestamps. They do
+not use secrets, `Math.random`, or wall-clock time in verified paths. The JVM
+and Web Crypto suites assert the same vectors, so the adapters must agree
+byte for byte.
 
-## Cloud IAM & Security Automation linkage
+`clj-kondo --fail-level warning` is the syntax gate for every file. Because a
+`deftest` swallowed by an unbalanced delimiter is valid Clojure to the reader
+but never runs, each portable runner additionally fails when the number of
+`(deftest` forms in its source differs from the number of registered tests.
 
-- Sidecar models the workload-identity exchange remote Cloud IAM automation
-  performs (short-lived OIDC-style tokens instead of static secrets); the
-  300s TTL + memory purge is the executable policy for non-human credential
-  lifetime.
-- Daglog is the tamper-evident machine-action trail: every automated IAM
-  mutation can be appended (`bb daglog append …`) and later verified
-  (`bb daglog verify …`, exit 0/1) by auditors or a remote gate.
-- `bb demo` gives a deterministic transcript for runbooks; `entry->json`
-  renders entries for SIEM/evidence ingestion.
+## Adapter failure contract
+
+Both v1 adapters follow the same rule, and the tests assert it:
+
+- a malformed token, a failed signature, a broken chain, or a rejected export
+  **resolves** to `{:valid false :reason ...}`; and
+- a caller mistake — missing `:expected-aud`, missing `:now-ms`, or an HMAC
+  key under 16 bytes — **rejects** the Promise (JVM: throws).
+
+A rejection never carries a verification verdict, so a caller cannot mistake a
+configuration bug for a clean check.

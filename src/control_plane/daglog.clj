@@ -1,9 +1,9 @@
 (ns control-plane.daglog
-  "Structured machine-transaction log: every entry carries a SHA-256
-  hash chained to its predecessor plus an HMAC-SHA-256 signature, so
-  any tampering — reordered, edited, or truncated entries — fails
-  verification. Fail-closed: verification recomputes everything and
-  reports the exact sequence number of the first break."
+  "Native JVM v0 compatibility recorder. Each entry carries a SHA-256 hash
+  chained to its predecessor plus an HMAC-SHA-256 signature. Verification
+  detects edits, reordering, and broken links in the supplied records; a
+  valid prefix can still verify, so truncation requires an independent trusted
+  anchor. New portable records use the v1 JSON/UTF-8 core instead."
   (:require [cheshire.core :as json]
             [clojure.edn :as edn]
             [clojure.string :as str])
@@ -113,8 +113,8 @@
       :else nil)))
 
 (defn verify-chain
-  "Recompute every hash, HMAC, link, and sequence number.
-  Returns {:valid true :entries n :tip-hash h} or
+  "Recompute every hash, HMAC, link, and sequence number in the supplied
+  records. Returns {:valid true :entries n :tip-hash h} or
   {:valid false :reason :bad-seq|:broken-link|:bad-hash|:bad-hmac
    :at <seq>|nil}."
   [log k]

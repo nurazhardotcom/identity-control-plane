@@ -1,13 +1,10 @@
 (ns control-plane.sidecar
-  "Ephemeral workload credential sidecar: simulates an OIDC token
-  exchange for non-human identities. Tokens are HMAC-signed, carry a
-  strict 300-second TTL, and their in-memory material is zeroed the
-  moment they expire (fail-closed: expired, tampered, or malformed
-  tokens never validate).
-
-  Secrets are held as char arrays — never interned Strings — so purge
-  can overwrite the exact cells. JVM strings are immutable and cannot
-  be reliably wiped, hence the char[] discipline."
+  "Ephemeral workload credential sidecar: a custom HMAC-signed bearer
+  credential for non-human identities. This is not an OIDC exchange and the
+  envelope is not a JWT. Tokens have a strict half-open 300-second TTL;
+  a valid token remains reusable until expiry, and validation never consumes
+  it. The legacy store's char[] purge is best-effort only: JVM strings,
+  GC copies, and provider internals cannot be reliably wiped."
   (:require [cheshire.core :as json]
             [clojure.string :as str])
   (:import (java.security MessageDigest SecureRandom)
@@ -78,8 +75,9 @@
     (count old)))
 
 (defn purge!
-  "Immediately zero and drop the material for jti. Returns true when
-  an entry was present, false otherwise."
+  "Immediately zero and drop the material for jti on a best-effort basis.
+  Returns true when an entry was present, false otherwise. This is not a
+  reliable memory-erasure primitive."
   [jti]
   (let [entry (get @store jti)]
     (swap! store dissoc jti)
@@ -133,11 +131,11 @@
 (defn validate-token
   "Validate a token. Returns {:valid :reason :claims}.
   Reasons for :valid false: :expired :bad-signature :aud-mismatch
-  :not-yet-valid :malformed. Expired tokens are purged from memory
-  immediately. TTL is strict: the token is valid for [iat, exp) —
-  at now == exp it is already expired.
-  :expected-aud is required (non-blank): the audience is always
-  checked, never silently skipped. Omission throws
+  :not-yet-valid :malformed. Expired tokens trigger a best-effort store
+  purge. TTL is strict: the token is valid for [iat, exp) —
+  at now == exp it is already expired. A valid token is not consumed and can
+  be replayed before expiry. :expected-aud is required (non-blank): the
+  audience is always checked, never silently skipped. Omission throws
   IllegalArgumentException."
   ([token key] (validate-token token key {}))
   ([token key {:keys [now expected-aud]}]
